@@ -1,21 +1,16 @@
-# -*- coding:utf-8 -*-
 import sys,os
 import cv2
 import numpy as np
 import scipy
 import scipy.ndimage
 import matplotlib.pyplot as plt
-
+import os
 from GuidedFilter import GuidedFilter
 
 def calDepthMap(I, r):
-    #计算深度图
-
     hsvI = cv2.cvtColor(I, cv2.COLOR_BGR2HSV)
     s = hsvI[:,:,1] / 255.0
     v = hsvI[:,:,2] / 255.0
-    #cv2.imshow("hsvI",hsvI)
-    #cv2.waitKey()
 
     sigma = 0.041337
     sigmaMat = np.random.normal(0, sigma, (I.shape[0], I.shape[1]))
@@ -24,13 +19,9 @@ def calDepthMap(I, r):
     outputPixel = output
     output = scipy.ndimage.filters.minimum_filter(output,(r,r))
     outputRegion = output
-    cv2.imwrite("data/vsFeature.jpg", outputRegion*255 )
-    #cv2.imshow("outputRegion",outputRegion)
-    #cv2.waitKey()
     return outputRegion, outputPixel
 
 def estA(img, Jdark):
-    #估计大气环境光A的值
 
 
     h,w,c = img.shape
@@ -55,11 +46,11 @@ def estA(img, Jdark):
     Amag = np.zeros((1, n_bright, 1), dtype=np.float32)
     
     # Compute magnitudes of RGB vectors of A
-    for i in xrange(n_bright):
+    for i in range(n_bright):
         x = Loc[0,h*w-1-i]
-        ix[x/w, x%w, 0] = 0
-        ix[x/w, x%w, 1] = 0
-        ix[x/w, x%w, 2] = 1
+        ix[x//w, x%w, 0] = 0
+        ix[x//w, x%w, 1] = 0
+        ix[x//w, x%w, 2] = 1
         
         Acand[0, i, :] = Ics[0, Loc[0, h*w-1-i], :]
         Amag[0, i] = np.linalg.norm(Acand[0,i,:])
@@ -74,57 +65,52 @@ def estA(img, Jdark):
     else:
         A = Acand[0, Loc2[0,n_bright-len(Y2):n_bright],:]
     
-    # finds the max of the 20 brightest pixels in original image
-    print A
-
-    #cv2.imshow("brightest",ix)
-    #cv2.waitKey()
-    cv2.imwrite("data/position_of_the_atmospheric_light.png", ix*255)
-    
     return A
 
 if __name__ == "__main__":
-    #参数设置
-    inputImagePath = "data/input.png" #输入图片路径
-    r = 15 #最小值滤波时的框的大小
-    beta = 1.0 #散射系数
-    gimfiltR = 60 #引导滤波时半径的大小
-    eps = 10**-3 #引导滤波时epsilon的值
+
+    test_images = os.listdir('test_images')
+
+    for image in test_images: 
+        
+        inputImagePath = "test_images/" + image
+        print(inputImagePath)
+        r = 15
+        beta = 1.0
+        gimfiltR = 60
+        eps = 10**-3 
 
 
-    I = cv2.imread(inputImagePath)
-    dR,dP = calDepthMap(I, r)
-    guided_filter = GuidedFilter(I, gimfiltR, eps)
-    refineDR = guided_filter.filter(dR)
-    tR = np.exp(-beta * refineDR)
-    tP = np.exp(-beta * dP)
+        I = cv2.imread(inputImagePath)
+        dR,dP = calDepthMap(I, r)
+        guided_filter = GuidedFilter(I, gimfiltR, eps)
+        refineDR = guided_filter.filter(dR)
+        tR = np.exp(-beta * refineDR)
+        tP = np.exp(-beta * dP)
 
-    cv2.imwrite("data/originalDepthMap.png", dR*255)
-    cv2.imwrite("data/refineDepthMap.png", refineDR*255)
-    cv2.imwrite("data/transmission.png", tR*255)
+        a = estA(I, dR)
 
-    a = estA(I, dR)
+        if I.dtype == np.uint8:
+            I = np.float32(I) / 255
 
-    if I.dtype == np.uint8:
-        I = np.float32(I) / 255
+        h,w,c = I.shape
+        J = np.zeros((h, w, c), dtype=np.float32)
 
-    h,w,c = I.shape
-    J = np.zeros((h, w, c), dtype=np.float32)
+        J[:,:,0] = I[:,:,0] - a[0,0]
+        J[:,:,1] = I[:,:,1] - a[0,1]
+        J[:,:,2] = I[:,:,2] - a[0,2]
 
-    J[:,:,0] = I[:,:,0] - a[0,0]
-    J[:,:,1] = I[:,:,1] - a[0,1]
-    J[:,:,2] = I[:,:,2] - a[0,2]
+        t = tR
+        t0, t1 = 0.05, 1
+        t = t.clip(t0, t1)
 
-    t = tR
-    t0, t1 = 0.05, 1
-    t = t.clip(t0, t1)
+        J[:, :, 0] = J[:, :, 0]  / t
+        J[:, :, 1] = J[:, :, 1]  / t
+        J[:, :, 2] = J[:, :, 2]  / t
 
-    J[:, :, 0] = J[:, :, 0]  / t
-    J[:, :, 1] = J[:, :, 1]  / t
-    J[:, :, 2] = J[:, :, 2]  / t
-
-    J[:, :, 0] = J[:, :, 0]  + a[0, 0]
-    J[:, :, 1] = J[:, :, 1]  + a[0, 1]
-    J[:, :, 2] = J[:, :, 2]  + a[0, 2]
-
-    cv2.imwrite("data/"+str(r)+"_beta"+str(beta)+".png", J*255)
+        J[:, :, 0] = J[:, :, 0]  + a[0, 0]
+        J[:, :, 1] = J[:, :, 1]  + a[0, 1]
+        J[:, :, 2] = J[:, :, 2]  + a[0, 2]
+        
+        out_path = "results/"+image
+        cv2.imwrite(out_path, J*255)

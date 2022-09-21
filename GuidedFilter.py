@@ -109,7 +109,7 @@ class GuidedFilter:
 
     def filter(self, p):
         
-        p_32F = _toFloatImg(p)
+        p_32F = self._toFloatImg(p)
         ab = self._computeCoefficients(p)
         return self._computeOutput(ab, self._I)
 
